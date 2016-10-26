@@ -25,7 +25,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
 
 find_package(dep)
 find_package(Threads)
-find_package(Boost 1.58.0 COMPONENTS system filesystem regex thread program_options)
+find_package(Boost 1.58.0 COMPONENTS system filesystem regex thread program_options timer) 
 
 # External Libraries
 set(EXTERNAL_LIB ${ZMQ_LIBRARY} ${TCMALLOC_LIBRARY} ${CMAKE_THREAD_LIBS_INIT} ${Boost_LIBRARIES})

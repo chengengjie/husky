@@ -2,6 +2,8 @@
 *.swp
 *.swo
 *.bak
+tags
+cscope.out
 
 # Python
 *.pyc
