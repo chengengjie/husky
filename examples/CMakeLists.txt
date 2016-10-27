@@ -66,7 +66,7 @@ target_link_libraries(EKEG ${EXTERNAL_LIB})
 set_property(TARGET EKEG PROPERTY CXX_STANDARD 14)
 
 # EKH
-add_executable(EKH edmonds_karp_husky.cpp)
+add_executable(EKH edmonds_karp_husky.cpp read.cpp)
 target_link_libraries(EKH ${husky})
 target_link_libraries(EKH ${EXTERNAL_LIB})
 set_property(TARGET EKH PROPERTY CXX_STANDARD 14)

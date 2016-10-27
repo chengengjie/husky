@@ -1,109 +1,108 @@
-#include <boost/config.hpp>
-#include <iostream>
-#include <string>
+#include "read.hpp"
+
+#include "core/engine.hpp"
+#include "io/input/hdfs_line_inputformat.hpp"
+#include "lib/aggregator_factory.hpp"
+
 #include <boost/timer/timer.hpp>
-#include <boost/graph/edmonds_karp_max_flow.hpp>
-#include <boost/graph/adjacency_list.hpp>
-#include <boost/graph/read_dimacs.hpp>
-#include <boost/graph/graph_utility.hpp>
-#include <boost/graph/visitors.hpp>
-#include <boost/graph/breadth_first_search.hpp>
 
-// Use a DIMACS network flow file as stdin.
-// edmonds-karp-eg < max_flow.dat
-
-using namespace boost;
-
-template<typename TimeMap, typename DistMap>
-class bfs_time_dist_visitor : public default_bfs_visitor
-{
-    typedef typename property_traits<TimeMap>::value_type T;
-    typedef typename property_traits<DistMap>::value_type D;
-
+class Vertex {
 public:
-    bfs_time_dist_visitor(TimeMap tmap, DistMap dmap, T& t, D& d) 
-        : m_timemap(tmap), m_distmap(dmap), m_time(t), m_dist(d) {}
+    using KeyT = int;
 
-    template<typename Vertex, typename Graph>
-    void discover_vertex(Vertex u, const Graph& g) const
-    {
-        put(m_timemap, u, m_time++);
+    Vertex() = default;
+    explicit Vertex(const KeyT& id) : vertex_id(id) {}
+    const KeyT& id() const { return vertex_id; }
+
+    // Serialization and deserialization
+    friend husky::BinStream& operator<<(husky::BinStream& stream, const Vertex& v) {
+        stream << v.vertex_id << v.adj << v.dist;
+        return stream;
+    }
+    friend husky::BinStream& operator>>(husky::BinStream& stream, Vertex& v) {
+        stream >> v.vertex_id >> v.adj >> v.dist;
+        return stream;
     }
 
-    template<typename Edge, typename Graph>
-    void tree_edge(Edge e, const Graph& g) const
-    {
-        auto dist = get(m_distmap, source(e, g))+1;
-        put(m_distmap, target(e, g), dist);
-        if (dist > m_dist) m_dist = dist;
-    }
-
-    TimeMap m_timemap;
-    DistMap m_distmap;
-    T& m_time;
-    D& m_dist;
+    KeyT vertex_id;
+    std::vector<KeyT> adj;
+    int dist = -1; // -1 stands for "not visited"
 };
 
-int main()
+void cc() {
+    // Create and globalize vertex objects
+    auto& vertex_list = husky::ObjListFactory::create_objlist<Vertex>();
+    int vertex_num;
+    husky::lib::Aggregator<int> total(0, [](int& a, const int& b) { a += b; });
+    auto& agg_ch = husky::lib::AggregatorFactory::get_channel();
+
+    if (husky::Context::get_global_tid() == 0){
+        auto fn = husky::Context::get_param("input");
+        husky::base::log_msg("input DIMACS file is "+fn);
+        std::ifstream ifs(fn);
+        std::vector<std::vector<int>> g;
+        int s;
+        ReadDIMACS(g, s, ifs);
+        husky::base::log_msg("finish reading "+fn);
+        vertex_num = g.size();
+        total.update(vertex_num);
+        for (int i=0; i<vertex_num; ++i){
+            Vertex v(i);
+            for (auto a:g[i]) v.adj.push_back(a);
+            if (i==s) v.dist = 0;
+            vertex_list.add_object(std::move(v));
+        }
+    }
+    agg_ch.out();
+    vertex_num = total.get_value();
+    husky::globalize(vertex_list);
+
+    auto& ch =
+        husky::ChannelFactory::create_push_combined_channel<int, husky::MinCombiner<int>>(vertex_list, vertex_list);
+
+    husky::lib::Aggregator<int> visited(0, [](int& a, const int& b) { a += b; });
+    visited.to_keep_aggregate();
+
+    husky::list_execute(vertex_list, {&ch}, {&ch, &agg_ch}, [&ch, &visited](Vertex& v) {
+        if (v.dist==0) {
+            visited.update(1);
+            for (auto a : v.adj) ch.push(v.dist, a);
+        }
+    });
+
+    // Main Loop
+    int dist=0;
+    while (visited.get_value() < vertex_num) {
+        ++dist;
+        husky::list_execute(vertex_list, {&ch}, {&ch, &agg_ch}, [&ch, &visited](Vertex& v) {
+            if (v.dist==-1 && ch.has_msgs(v)) {
+                v.dist = ch.get(v)+1;
+                visited.update(1);
+                for (auto a : v.adj) ch.push(v.dist, a);
+            }
+        });
+    }
+
+    if (husky::Context::get_global_tid() == 0) husky::base::log_msg("dist: "+std::to_string(dist));
+    std::string small_graph = husky::Context::get_param("print");
+    if (small_graph == "1") {
+        husky::list_execute(vertex_list, [](Vertex& v) {
+            husky::base::log_msg("vertex: "+std::to_string(v.id()) + " dist: "+std::to_string(v.dist));
+        });
+    }
+}
+
+int main(int argc, char** argv)
 {
-    timer::cpu_timer myTimer;
-
-    // Graph
-    typedef adjacency_list_traits<vecS, vecS, directedS> Traits;
-    typedef adjacency_list<listS, vecS, directedS,
-        property<vertex_name_t, std::string>,
-        property<edge_capacity_t, long,
-        property<edge_residual_capacity_t, long,
-        property<edge_reverse_t, Traits::edge_descriptor>>> > Graph;
-
-    Graph g;
-
-    auto capacity = get(edge_capacity, g);
-    auto residual_capacity = get(edge_residual_capacity, g);
-    auto rev = get(edge_reverse, g);
-    auto vid = get(vertex_index, g);
-    Traits::vertex_descriptor s, t;
-    read_dimacs_max_flow(g, capacity, rev, s, t);
-
-    // Max flow
-    /*myTimer.start();
-    long flow = edmonds_karp_max_flow(g, s, t);
-    std::cout << "max flow is " << flow << std::endl;
-    std::cout << timer::format(myTimer.elapsed()) << std::endl;*/
-
-    // BFS1
-    typedef graph_traits<Graph>::vertices_size_type Size;
-    std::vector<Size> dtime(num_vertices(g));
-    std::vector<Size> dist(num_vertices(g));
-    typedef iterator_property_map<std::vector<Size>::iterator,
-        property_map<Graph, vertex_index_t>::const_type> dtime_pm_type;
-    dtime_pm_type dtime_pm(dtime.begin(), vid);
-    dtime_pm_type dist_pm(dist.begin(), vid);
-    put(dist_pm, s, 0);
-    Size time=0;
-    Size maxDist=0;
-    bfs_time_dist_visitor<dtime_pm_type, dtime_pm_type> vis(dtime_pm, dist_pm, time, maxDist);
-
-    myTimer.start();
-    breadth_first_search(g, s, visitor(vis));
-    std::cout << "max dist is " << maxDist << std::endl;
-    std::cout << timer::format(myTimer.elapsed()) << std::endl;;
-    
-    // BFS2
-    std::vector<Size> dist2(num_vertices(g));
-    dtime_pm_type dist2_pm(dist2.begin(), vid);
-    myTimer.start();
-    breadth_first_search(g, s, visitor(make_bfs_visitor(record_distances(dist2_pm, on_tree_edge()))));
-    Size maxDist2=0;
-    for (auto d:dist2) if (d>maxDist2) maxDist2=d;
-    std::cout << "max dist is " << maxDist2 << std::endl;
-    std::cout << timer::format(myTimer.elapsed()) << std::endl;;
-
-    /*for (auto vp = vertices(g); vp.first!=vp.second; ++vp.first){
-        auto v = *vp.first;
-        std::cout << "vertex " << get(vid, v) << ": dist=" << get(dist_pm, v) 
-            << "; time=" << get(dtime_pm, v) << std::endl;
-    }*/
-
-    return EXIT_SUCCESS;
+    boost::timer::auto_cpu_timer myTimer;
+    std::vector<std::string> args;
+    args.push_back("hdfs_namenode");
+    args.push_back("hdfs_namenode_port");
+    args.push_back("input");
+    args.push_back("print");
+    if (husky::init_with_args(argc, argv, args)) {
+        husky::run_job(cc);
+        return 0;
+    }
+    return 1;
 }
