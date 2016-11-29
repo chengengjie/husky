@@ -60,16 +60,16 @@ target_link_libraries(TRIAL ${EXTERNAL_LIB})
 set_property(TARGET TRIAL PROPERTY CXX_STANDARD 14)
 
 # EKEG
-add_executable(EKEG edmonds_karp_eg.cpp)
-target_link_libraries(EKEG ${husky})
-target_link_libraries(EKEG ${EXTERNAL_LIB})
-set_property(TARGET EKEG PROPERTY CXX_STANDARD 14)
+add_executable(EK_BOOST edmonds_karp_eg.cpp)
+target_link_libraries(EK_BOOST ${husky})
+target_link_libraries(EK_BOOST ${EXTERNAL_LIB})
+set_property(TARGET EK_BOOST PROPERTY CXX_STANDARD 14)
 
 # EKH
-add_executable(EKH edmonds_karp_husky.cpp read.cpp)
-target_link_libraries(EKH ${husky})
-target_link_libraries(EKH ${EXTERNAL_LIB})
-set_property(TARGET EKH PROPERTY CXX_STANDARD 14)
+add_executable(EK_HUSKY edmonds_karp_husky.cpp)
+target_link_libraries(EK_HUSKY ${husky})
+target_link_libraries(EK_HUSKY ${EXTERNAL_LIB})
+set_property(TARGET EK_HUSKY PROPERTY CXX_STANDARD 14)
 
 # CC
 add_executable(CC connected_components.cpp)
