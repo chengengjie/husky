@@ -1,5 +1,5 @@
 #include "core/engine.hpp"
-#include "io/input/hdfs_line_inputformat.hpp"
+#include "io/input/inputformat_store.hpp"
 #include "lib/aggregator_factory.hpp"
 
 #include "boost/tokenizer.hpp"
@@ -35,14 +35,14 @@ void mf() {
 
     // Load vertex list
     // local read
-    husky::io::HDFSLineInputFormat infmt;
+    auto& infmt = husky::io::InputFormatStore::create_line_inputformat();
     infmt.set_input(husky::Context::get_param("hdfs_input"));
     int vertexNum, edgeNum, srcVertex;
     husky::lib::Aggregator<int> vertexNumAgg(0, [](int& a, const int& b) { a = b; });
     husky::lib::Aggregator<int> edgeNumAgg(0, [](int& a, const int& b) { a += b; });
     husky::lib::Aggregator<int> srcVertexAgg(0, [](int& a, const int& b) { a = b; });
-    auto& vertexList = husky::ObjListFactory::create_objlist<Vertex>();
-    auto& inputToVertexCh = husky::ChannelFactory::create_push_channel<int>(infmt, vertexList);
+    auto& vertexList = husky::ObjListStore::create_objlist<Vertex>();
+    auto& inputToVertexCh = husky::ChannelStore::create_push_channel<int>(infmt, vertexList);
     auto parseDIMACS = [&](boost::string_ref& chunk) {
         if (chunk.size() == 0) return;
         boost::char_separator<char> sep(" \t");
@@ -89,7 +89,7 @@ void mf() {
 
     // Common data
     auto& ch =
-        husky::ChannelFactory::create_push_combined_channel<int, husky::MinCombiner<int>>(vertexList, vertexList);
+        husky::ChannelStore::create_push_combined_channel<int, husky::MinCombiner<int>>(vertexList, vertexList);
     husky::lib::Aggregator<int> visited(0, [](int& a, const int& b) { a += b; });
     visited.to_keep_aggregate();
 

@@ -58,12 +58,6 @@ target_link_libraries(PI ${husky})
 target_link_libraries(PI ${EXTERNAL_LIB})
 set_property(TARGET PI PROPERTY CXX_STANDARD 14)
 
-# TRIAL
-add_executable(TRIAL trial.cpp)
-target_link_libraries(TRIAL ${husky})
-target_link_libraries(TRIAL ${EXTERNAL_LIB})
-set_property(TARGET TRIAL PROPERTY CXX_STANDARD 14)
-
 # EKEG
 add_executable(EK_BOOST edmonds_karp_eg.cpp)
 target_link_libraries(EK_BOOST ${husky})
