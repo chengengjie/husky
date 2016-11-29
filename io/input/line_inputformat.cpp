@@ -12,36 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "io/input/hdfs_line_inputformat.hpp"
+#include "io/input/line_inputformat.hpp"
 
 #include <string>
 
 #include "boost/utility/string_ref.hpp"
 
-#include "io/input/hdfs_file_splitter.hpp"
 #include "io/input/inputformat_helper.hpp"
 
 namespace husky {
 namespace io {
 
-enum HDFSLineInputFormatSetUp {
+enum LineInputFormatSetUp {
     NotSetUp = 0,
     InputSetUp = 1 << 1,
     AllSetUp = InputSetUp,
 };
 
-HDFSLineInputFormat::HDFSLineInputFormat() { is_setup_ = HDFSLineInputFormatSetUp::NotSetUp; }
+LineInputFormat::LineInputFormat() { is_setup_ = LineInputFormatSetUp::NotSetUp; }
 
-HDFSLineInputFormat::~HDFSLineInputFormat() {}
-
-void HDFSLineInputFormat::set_input(const std::string& url) {
-    splitter_.load(url);
-    is_setup_ |= HDFSLineInputFormatSetUp::InputSetUp;
+LineInputFormat::~LineInputFormat() {
+    if (!splitter_)
+        return;
+    delete splitter_;
+    splitter_ = nullptr;
 }
 
-bool HDFSLineInputFormat::is_setup() const { return !(is_setup_ ^ HDFSLineInputFormatSetUp::AllSetUp); }
+bool LineInputFormat::is_setup() const { return !(is_setup_ ^ LineInputFormatSetUp::AllSetUp); }
 
-bool HDFSLineInputFormat::next(boost::string_ref& ref) {
+void LineInputFormat::set_input(const std::string& url) {
+    set_splitter(url);
+    is_setup_ |= LineInputFormatSetUp::InputSetUp;
+}
+
+bool LineInputFormat::next(boost::string_ref& ref) {
     if (buffer_.size() == 0) {
         bool success = fetch_new_block();
         if (success == false)
@@ -50,7 +54,7 @@ bool HDFSLineInputFormat::next(boost::string_ref& ref) {
     // last charater in block
     if (r == buffer_.size() - 1) {
         // fetch next block
-        buffer_ = splitter_.fetch_block(true);
+        buffer_ = splitter_->fetch_block(true);
         if (buffer_.empty()) {
             // end of a file
             bool success = fetch_new_block();
@@ -65,7 +69,7 @@ bool HDFSLineInputFormat::next(boost::string_ref& ref) {
         }
     }
 
-    if (splitter_.get_offset() == 0 && r == 0) {
+    if (splitter_->get_offset() == 0 && r == 0) {
         // begin of a file
         l = 0;
         if (buffer_[0] == '\n')
@@ -82,7 +86,7 @@ bool HDFSLineInputFormat::next(boost::string_ref& ref) {
         auto last = buffer_.substr(l);
         last_part_ = std::string(last.data(), last.size());
         // fetch next subBlock
-        buffer_ = splitter_.fetch_block(true);
+        buffer_ = splitter_->fetch_block(true);
         handle_next_block();
         ref = last_part_;
         return true;
@@ -92,7 +96,7 @@ bool HDFSLineInputFormat::next(boost::string_ref& ref) {
     }
 }
 
-void HDFSLineInputFormat::handle_next_block() {
+void LineInputFormat::handle_next_block() {
     while (true) {
         if (buffer_.empty())
             return;
@@ -101,7 +105,7 @@ void HDFSLineInputFormat::handle_next_block() {
         if (r == boost::string_ref::npos) {
             // fetch next subBlock
             last_part_ += std::string(buffer_.data(), buffer_.size());
-            buffer_ = splitter_.fetch_block(true);
+            buffer_ = splitter_->fetch_block(true);
             continue;
         } else {
             last_part_ += std::string(buffer_.substr(0, r).data(), r);
@@ -111,9 +115,9 @@ void HDFSLineInputFormat::handle_next_block() {
     }
 }
 
-bool HDFSLineInputFormat::fetch_new_block() {
+bool LineInputFormat::fetch_new_block() {
     // fetch a new block
-    buffer_ = splitter_.fetch_block(false);
+    buffer_ = splitter_->fetch_block(false);
     if (buffer_.empty())
         //  no more files, exit
         return false;
@@ -121,7 +125,7 @@ bool HDFSLineInputFormat::fetch_new_block() {
     return true;
 }
 
-void HDFSLineInputFormat::clear_buffer() {
+void LineInputFormat::clear_buffer() {
     buffer_.clear();
     l = r = 0;
 }

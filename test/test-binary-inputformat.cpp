@@ -18,10 +18,11 @@
 #include "base/log.hpp"
 #include "base/serialization.hpp"
 #include "core/engine.hpp"
-#include "io/input/binary_inputformat.hpp"
+#include "io/input/inputformat_store.hpp"
 
 void read_bin_file(const std::string& path) {
-    husky::io::BinaryInputFormat infmt(path);
+    // path can be `nfs:///path/to/file` or `hdfs:///path/to/file`.
+    auto& infmt = husky::io::InputFormatStore::create_binary_inputformat(path, "");
 
     size_t read_sz = 0;
     husky::load(infmt, [&read_sz](husky::base::BinStream& bin) {
@@ -33,7 +34,7 @@ void read_bin_file(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    ASSERT_MSG(husky::init_with_args(argc, argv, {"hdfs_path", "hdfs_namenode", "hdfs_namenode_port"}),
-        "Argument `hdfs_path` is not provided.");
-    husky::run_job(std::bind(read_bin_file, husky::Context::get_param("hdfs_path")));
+    ASSERT_MSG(husky::init_with_args(argc, argv, {"path", "hdfs_namenode", "hdfs_namenode_port"}),
+        "Argument `path` is not provided.");
+    husky::run_job(std::bind(read_bin_file, husky::Context::get_param("path")));
 }

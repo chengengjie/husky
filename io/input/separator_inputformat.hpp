@@ -14,26 +14,25 @@
 
 #pragma once
 
-#include <cassert>
-#include <fstream>
 #include <string>
 
 #include "boost/utility/string_ref.hpp"
 
-#include "io/input/hdfs_file_splitter.hpp"
-#include "io/input/inputformat_base.hpp"
+#include "io/input/file_inputformat_impl.hpp"
 
 namespace husky {
 namespace io {
 
-class SeparatorInputFormat : public InputFormatBase {
+class SeparatorInputFormat final : public FileInputFormatImpl {
    public:
     typedef boost::string_ref RecordT;
 
-    explicit SeparatorInputFormat(std::string pattern);
-    virtual void set_input(const std::string& url);
-    virtual bool next(boost::string_ref& ref);
-    virtual bool is_setup() const;
+    explicit SeparatorInputFormat(const std::string& pattern);
+    virtual ~SeparatorInputFormat();
+
+    void set_input(const std::string& url);
+    bool next(boost::string_ref& ref);
+    bool is_setup() const override;
 
    protected:
     void handle_next_block();
@@ -47,7 +46,6 @@ class SeparatorInputFormat : public InputFormatBase {
     bool in_between_ = false;
     boost::string_ref buffer_;
     std::string in_between_str_;
-    HDFSFileSplitter splitter_;
 };
 
 }  // namespace io

@@ -14,26 +14,25 @@
 
 #pragma once
 
-#include <cassert>
-#include <fstream>
 #include <string>
 
 #include "boost/utility/string_ref.hpp"
 
-#include "io/input/hdfs_file_splitter.hpp"
-#include "io/input/inputformat_base.hpp"
+#include "io/input/file_inputformat_impl.hpp"
 
 namespace husky {
 namespace io {
 
-class ChunkInputFormat final : public InputFormatBase {
+class ChunkInputFormat final : public FileInputFormatImpl {
    public:
     typedef boost::string_ref RecordT;
 
     explicit ChunkInputFormat(int chunk_size);
-    virtual void set_input(const std::string& url);
-    virtual bool next(boost::string_ref& ref);
-    virtual bool is_setup() const;
+    virtual ~ChunkInputFormat();
+
+    void set_input(const std::string& url);
+    bool next(boost::string_ref& ref);
+    bool is_setup() const override;
 
    protected:
     void handle_next_block(int remain);
@@ -45,7 +44,6 @@ class ChunkInputFormat final : public InputFormatBase {
 
     std::string last_part_;
     boost::string_ref buffer_;
-    HDFSFileSplitter splitter_;
 };
 
 }  // namespace io

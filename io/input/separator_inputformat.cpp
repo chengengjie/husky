@@ -18,7 +18,7 @@
 
 #include "boost/utility/string_ref.hpp"
 
-#include "io/input/hdfs_file_splitter.hpp"
+#include "base/exception.hpp"
 #include "io/input/inputformat_helper.hpp"
 
 namespace husky {
@@ -30,12 +30,24 @@ enum SeparatorInputFormatSetUp {
     AllSetUp = InputSetUp,
 };
 
-SeparatorInputFormat::SeparatorInputFormat(std::string pattern) : pattern_(pattern) {
+SeparatorInputFormat::SeparatorInputFormat(const std::string& pattern) : pattern_(pattern) {
     is_setup_ = SeparatorInputFormatSetUp::NotSetUp;
 }
 
+SeparatorInputFormat::~SeparatorInputFormat() {
+    if (!splitter_)
+        return;
+    delete splitter_;
+    splitter_ = nullptr;
+}
+
 void SeparatorInputFormat::set_input(const std::string& url) {
-    splitter_.load(url);
+    set_splitter(url);
+    // reset input format
+    l = r = 0;
+    last_part_ = "";
+    buffer_.clear();
+    in_between_ = false;
     is_setup_ |= SeparatorInputFormatSetUp::InputSetUp;
 }
 
@@ -54,7 +66,7 @@ bool SeparatorInputFormat::next(boost::string_ref& ref) {
             return false;
     }
     if (r + pattern_.size() == buffer_.size()) {
-        buffer_ = splitter_.fetch_block(true);
+        buffer_ = splitter_->fetch_block(true);
         if (buffer_.empty()) {
             bool success = fetch_new_block();
             if (!success)
@@ -67,7 +79,7 @@ bool SeparatorInputFormat::next(boost::string_ref& ref) {
         }
     }
 
-    if (splitter_.get_offset() == 0 && r == 0) {
+    if (splitter_->get_offset() == 0 && r == 0) {
         // begin of a file, start from index 0
         l = 0;
         // for the case file starting with separator
@@ -77,7 +89,7 @@ bool SeparatorInputFormat::next(boost::string_ref& ref) {
         l = helper::find_next(buffer_, 0, pattern_);
         // can not find first pattern
         if (l == boost::string_ref::npos) {
-            throw std::runtime_error("data format error, separatorinputformat.hpp : cannot find the first pattern_");
+            throw base::HuskyException("data format error!");
         }
         l += pattern_.size();
     } else {
@@ -88,7 +100,7 @@ bool SeparatorInputFormat::next(boost::string_ref& ref) {
     if (r == boost::string_ref::npos) {
         auto last = buffer_.substr(l);
         last_part_ = std::string(last.data(), last.size());
-        buffer_ = splitter_.fetch_block(true);
+        buffer_ = splitter_->fetch_block(true);
         handle_next_block();
         ref = last_part_;
         return true;
@@ -107,7 +119,7 @@ void SeparatorInputFormat::handle_next_block() {
     r = helper::find_next(last_part_, 0, pattern_);
     // can not find pattern in the new block
     if (r == boost::string_ref::npos) {
-        throw std::runtime_error("data format error, separatorinputformat.hpp : handle_next_block_pattern_ 1");
+        throw base::HuskyException("data format error!");
     }
     if (r < pre_last_part_size) {
         int save_r = r;
@@ -115,7 +127,7 @@ void SeparatorInputFormat::handle_next_block() {
         r = helper::find_next(last_part_, l, pattern_);
         // can not find pattern after in between pattern in the new block
         if (r == boost::string_ref::npos) {
-            throw std::runtime_error("data format error, separatorinputformat.hpp : handle_next_block_pattern_ 2");
+            throw base::HuskyException("data format error!");
         }
         in_between_ = true;
         in_between_str_ = last_part_.substr(l, r - l);
@@ -129,7 +141,7 @@ void SeparatorInputFormat::handle_next_block() {
 }
 
 bool SeparatorInputFormat::fetch_new_block() {
-    buffer_ = splitter_.fetch_block(false);
+    buffer_ = splitter_->fetch_block(false);
     if (buffer_.empty())
         return false;
     l = r = 0;

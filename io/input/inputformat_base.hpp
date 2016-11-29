@@ -14,12 +14,17 @@
 
 #pragma once
 
+#include <string>
+
+#include "boost/utility/string_ref.hpp"
+
 #include "core/channel/channel_source.hpp"
+#include "core/utils.hpp"
 
 namespace husky {
 namespace io {
 
-/// Interface for InputFormat.
+/// Interface for all InputFormat classes.
 class InputFormatBase : public husky::ChannelSource {
    public:
     virtual ~InputFormatBase() = default;

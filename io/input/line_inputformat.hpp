@@ -20,17 +20,17 @@
 
 #include "boost/utility/string_ref.hpp"
 
-#include "io/input/inputformat_base.hpp"
-#include "io/input/nfs_file_splitter.hpp"
+#include "io/input/file_inputformat_impl.hpp"
 
 namespace husky {
 namespace io {
 
-class NFSLineInputFormat final : public InputFormatBase {
+class LineInputFormat final : public FileInputFormatImpl {
    public:
     typedef boost::string_ref RecordT;
 
-    NFSLineInputFormat();
+    LineInputFormat();
+    virtual ~LineInputFormat();
 
     virtual void set_input(const std::string& url);
     virtual bool next(boost::string_ref& ref);
@@ -44,9 +44,7 @@ class NFSLineInputFormat final : public InputFormatBase {
     int l = 0;
     int r = 0;
     std::string last_part_;
-
     boost::string_ref buffer_;
-    NFSFileSplitter splitter_;
 };
 
 }  // namespace io

@@ -19,31 +19,28 @@
 
 #include "boost/utility/string_ref.hpp"
 
+#include "io/input/file_splitter_base.hpp"
+
 namespace husky {
 namespace io {
 
-class NFSFileSplitter {
+class NFSFileSplitter final : public FileSplitterBase {
    public:
     NFSFileSplitter();
+    virtual ~NFSFileSplitter();
 
-    ~NFSFileSplitter();
-
-    virtual void load(std::string url);
-
+    void load(std::string url);
     virtual boost::string_ref fetch_block(bool is_next = false);
-
-    size_t get_offset();
-
-    static int local_block_size;
+    inline size_t get_offset() { return offset_; }
 
    protected:
     int read_block(std::string const& fn);
 
-    std::ifstream fin;
-    std::string url;
+    std::ifstream fin_;
+    std::string url_;
     std::string cur_fn;
-    size_t offset;
-    char* data;
+    size_t offset_;
+    char* data_;
 
     static int nfs_block_size;
 };

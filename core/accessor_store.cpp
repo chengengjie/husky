@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "shuffle_combiner_factory.hpp"
+#include "core/accessor_store.hpp"
 
 namespace husky {
 
-std::unordered_map<size_t, ShuffleCombinerSetBase*> ShuffleCombinerFactory::shuffle_combiners_map;
-std::unordered_map<size_t, size_t> ShuffleCombinerFactory::num_local_threads;
-std::mutex ShuffleCombinerFactory::shuffle_combiners_map_mutex;
+std::unordered_map<size_t, AccessorSetBase*> AccessorStore::accessors_map;
+std::mutex AccessorStore::accessors_map_mutex;
+std::unordered_map<size_t, size_t> AccessorStore::num_local_threads;
 
 }  // namespace husky

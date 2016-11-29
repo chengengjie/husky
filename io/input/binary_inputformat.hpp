@@ -31,7 +31,11 @@ class BinaryInputFormat final : public InputFormatBase {
     BinaryInputFormat(const BinaryInputFormat&) = delete;
     ~BinaryInputFormat();
 
-    bool is_setup() const override;
+    inline auto get_outchannels() { return infmt_impl_->get_outchannels(); }
+
+    // The input of BinaryInputFormat is already fixed in the construtor
+    inline bool is_setup() const { return true; }
+
     inline bool next(RecordT& t) { return infmt_impl_->next(t); }
 
     static inline CastRecordT& recast(RecordT& t) { return BinaryInputFormatImpl::recast(t); }

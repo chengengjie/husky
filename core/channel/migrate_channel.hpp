@@ -67,6 +67,8 @@ class MigrateChannel : public ObjList2ObjListChannel<ObjT, ObjT> {
         int start = this->global_id_;
         for (int i = 0; i < migrate_buffer_.size(); ++i) {
             int dst = (start + i) % migrate_buffer_.size();
+            if (migrate_buffer_[dst].size() == 0)
+                continue;
             this->mailbox_->send(dst, this->channel_id_, this->progress_, migrate_buffer_[dst]);
             migrate_buffer_[dst].purge();
         }
@@ -96,6 +98,8 @@ class MigrateChannel : public ObjList2ObjListChannel<ObjT, ObjT> {
             auto idx = this->dst_ptr_->add_object(std::move(obj));
             this->dst_ptr_->process_attribute(bin_push, idx);
         }
+        if (this->dst_ptr_->get_num_del() * 2 > this->dst_ptr_->get_vector_size())
+            this->dst_ptr_->deletion_finalize();
     }
 
     std::vector<BinStream> migrate_buffer_;

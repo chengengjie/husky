@@ -12,12 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "core/accessor_factory.hpp"
+#pragma once
+
+#include <fstream>
+#include <string>
+
+#include "boost/utility/string_ref.hpp"
 
 namespace husky {
+namespace io {
 
-std::unordered_map<size_t, AccessorSetBase*> AccessorFactory::accessors_map;
-std::mutex AccessorFactory::accessors_map_mutex;
-std::unordered_map<size_t, size_t> AccessorFactory::num_local_threads;
+class FileSplitterBase {
+   public:
+    virtual ~FileSplitterBase() = default;
+    virtual void load(std::string url) = 0;
+    virtual boost::string_ref fetch_block(bool is_next = false) = 0;
+    virtual size_t get_offset() = 0;
 
+   protected:
+    virtual int read_block(const std::string& fn) = 0;
+};
+
+}  // namespace io
 }  // namespace husky

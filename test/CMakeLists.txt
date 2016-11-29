@@ -15,6 +15,16 @@
 
 include_directories(${PROJECT_SOURCE_DIR})
 
+if(LIBHDFS3_FOUND)
+    include_directories(${LIBHDFS3_INCLUDE_DIR})
+    add_definitions(-DWITH_HDFS)
+endif(LIBHDFS3_FOUND)
+
+if(MONGOCLIENT_FOUND)
+    include_directories(${MONGOCLIENT_INCLUDE_DIR})
+    add_definitions(-DWITH_MONGODB)
+endif(MONGOCLIENT_FOUND)
+
 set(husky husky-lib husky-io husky-core husky-base) 
 
 # GTest, GMock
@@ -52,20 +62,28 @@ target_link_libraries(HuskyUnitTest ${GTEST_LIBRARIES})
 target_link_libraries(HuskyUnitTest ${GMOCK_LIBRARIES})
 set_property(TARGET HuskyUnitTest PROPERTY CXX_STANDARD 14)
 
+# Functional Test
+
 # TestAsync 
 add_executable(TestAsync test-async.cpp)
 target_link_libraries(TestAsync ${husky})
 target_link_libraries(TestAsync ${EXTERNAL_LIB})
 set_property(TARGET TestAsync PROPERTY CXX_STANDARD 14)
 
-# TestNFSFileInputFormat
-add_executable(TestNFSFileInputFormat test-nfs_file_inputformat.cpp)
-target_link_libraries(TestNFSFileInputFormat ${husky})
-target_link_libraries(TestNFSFileInputFormat ${EXTERNAL_LIB})
-set_property(TARGET TestNFSFileInputFormat PROPERTY CXX_STANDARD 14)
+# TestBinaryInputFormat
+add_executable(TestBinaryInputFormat test-binary-inputformat.cpp)
+target_link_libraries(TestBinaryInputFormat ${husky})
+target_link_libraries(TestBinaryInputFormat ${EXTERNAL_LIB})
+set_property(TARGET TestBinaryInputFormat PROPERTY CXX_STANDARD 14)
 
-# TestHDFSFileInputFormat
-add_executable(TestHDFSFileInputFormat test-hdfs_file_inputformat.cpp)
-target_link_libraries(TestHDFSFileInputFormat ${husky})
-target_link_libraries(TestHDFSFileInputFormat ${EXTERNAL_LIB})
-set_property(TARGET TestHDFSFileInputFormat PROPERTY CXX_STANDARD 14)
+# TestLogMsg
+add_executable(TestLogMsg test-log-msg.cpp)
+target_link_libraries(TestLogMsg ${husky})
+target_link_libraries(TestLogMsg ${EXTERNAL_LIB})
+set_property(TARGET TestLogMsg PROPERTY CXX_STANDARD 14)
+
+# TestMongoDBOutputFormat
+add_executable(TestMongoDBOutputFormat test-mongodb-outputformat.cpp)
+target_link_libraries(TestMongoDBOutputFormat ${husky})
+target_link_libraries(TestMongoDBOutputFormat ${EXTERNAL_LIB})
+set_property(TARGET TestMongoDBOutputFormat PROPERTY CXX_STANDARD 14)

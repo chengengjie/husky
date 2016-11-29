@@ -25,6 +25,11 @@ if(MONGOCLIENT_FOUND)
     add_definitions(-DWITH_MONGODB)
 endif(MONGOCLIENT_FOUND)
 
+if(THRIFT_FOUND)
+    include_directories(${THRIFT_INCLUDE_DIR})
+    add_definitions(-DWITH_THRIFT)
+endif(THRIFT_FOUND)
+
 set(husky husky-lib husky-io husky-core husky-base) 
 
 ### Applications
@@ -77,6 +82,12 @@ target_link_libraries(CC ${husky})
 target_link_libraries(CC ${EXTERNAL_LIB})
 set_property(TARGET CC PROPERTY CXX_STANDARD 14)
 
+# PIC
+add_executable(PIC pic.cpp)
+target_link_libraries(PIC ${husky})
+target_link_libraries(PIC ${EXTERNAL_LIB})
+set_property(TARGET PIC PROPERTY CXX_STANDARD 14)
+
 # PageRank
 add_executable(PageRank pagerank.cpp)
 target_link_libraries(PageRank ${husky})
@@ -94,3 +105,45 @@ add_executable(PR_CC pr_cc_attrlist.cpp)
 target_link_libraries(PR_CC ${husky})
 target_link_libraries(PR_CC ${EXTERNAL_LIB})
 set_property(TARGET PR_CC PROPERTY CXX_STANDARD 14)
+
+# Vector
+add_executable(vector vector.cpp)
+target_link_libraries(vector ${husky})
+target_link_libraries(vector ${EXTERNAL_LIB})
+set_property(TARGET vector PROPERTY CXX_STANDARD 14)
+
+# LabeledPoint
+add_executable(labeled_point labeled_point.cpp)
+target_link_libraries(labeled_point ${husky})
+target_link_libraries(labeled_point ${EXTERNAL_LIB})
+set_property(TARGET labeled_point PROPERTY CXX_STANDARD 14)
+
+# Linear Regression
+add_executable(LinearRegression linear_regression.cpp)
+target_link_libraries(LinearRegression ${husky})
+target_link_libraries(LinearRegression ${EXTERNAL_LIB})
+set_property(TARGET LinearRegression PROPERTY CXX_STANDARD 14)
+
+# Logistic Regression
+add_executable(LogisticRegression logistic_regression.cpp)
+target_link_libraries(LogisticRegression ${husky})
+target_link_libraries(LogisticRegression ${EXTERNAL_LIB})
+set_property(TARGET LogisticRegression PROPERTY CXX_STANDARD 14)
+
+# SVM
+add_executable(SVM svm.cpp)
+target_link_libraries(SVM ${husky})
+target_link_libraries(SVM ${EXTERNAL_LIB})
+set_property(TARGET SVM PROPERTY CXX_STANDARD 14)
+
+# tf-idf
+add_executable(TF-IDF tfidf.cpp)
+target_link_libraries(TF-IDF ${husky})
+target_link_libraries(TF-IDF ${EXTERNAL_LIB})
+set_property(TARGET Aggregator PROPERTY CXX_STANDARD 14)
+
+# Affinity matrix
+add_executable(AMAT affinity.cpp)
+target_link_libraries(AMAT ${husky})
+target_link_libraries(AMAT ${EXTERNAL_LIB})
+set_property(TARGET AMAT PROPERTY CXX_STANDARD 14)

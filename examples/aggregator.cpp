@@ -20,7 +20,7 @@
 
 #include "base/log.hpp"
 #include "core/engine.hpp"
-#include "io/input/hdfs_line_inputformat.hpp"
+#include "io/input/inputformat_store.hpp"
 #include "lib/aggregator_factory.hpp"
 
 namespace husky {
@@ -62,11 +62,11 @@ void aggregator() {
             });
         auto& ac = AggregatorFactory::get_channel();
 
-        io::HDFSLineInputFormat infmt;
-        infmt.set_input(Context::get_param("input"));
+        auto& infmt = husky::io::InputFormatStore::create_line_inputformat();
+        infmt.set_input(husky::Context::get_param("input"));
 
-        auto& word_list = ObjListFactory::create_objlist<Word>();
-        auto& ch = ChannelFactory::create_push_combined_channel<int, SumCombiner<int>>(infmt, word_list);
+        auto& word_list = ObjListStore::create_objlist<Word>();
+        auto& ch = ChannelStore::create_push_combined_channel<int, SumCombiner<int>>(infmt, word_list);
 
         load(infmt, {&ch}, [&](boost::string_ref& chunk) {
             if (chunk.size() == 0)
