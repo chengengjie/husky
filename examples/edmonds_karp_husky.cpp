@@ -5,6 +5,10 @@
 #include "boost/tokenizer.hpp"
 #include <boost/timer/timer.hpp>
 
+using namespace std;
+using namespace husky;
+using base::log_msg;
+
 class Vertex {
 public:
     using KeyT = int;
@@ -14,118 +18,138 @@ public:
     const KeyT& id() const { return vertexId; }
 
     // Serialization and deserialization
-    friend husky::BinStream& operator<<(husky::BinStream& stream, const Vertex& v) {
-        stream << v.vertexId << v.adjs << v.dist;
+    friend BinStream& operator<<(BinStream& stream, const Vertex& v) {
+        stream << v.vertexId << v.caps << v.resCaps << v.dist;
         return stream;
     }
-    friend husky::BinStream& operator>>(husky::BinStream& stream, Vertex& v) {
-        stream >> v.vertexId >> v.adjs >> v.dist;
+    friend BinStream& operator>>(BinStream& stream, Vertex& v) {
+        stream >> v.vertexId >> v.caps >> v.resCaps >> v.dist;
         return stream;
     }
 
     KeyT vertexId;
-    std::vector<KeyT> adjs;
+    vector<pair<KeyT, int>> caps;
+    unordered_map<KeyT, int> resCaps; // (id, edge weight)
     int dist = -1; // -1 stands for "not visited"
 };
 
-void mf() {
-    boost::timer::cpu_timer myTimer;
-    if (husky::Context::get_global_tid() == 0)
-        husky::base::log_msg("Start.");
+template <typename K, typename V>
+struct KeyMinCombiner {
+    static void combine(pair<K, V>& val, pair<K, V> const& other) { if (other.first < val.first) val = other; }
+};
 
-    // Load vertex list
-    // local read
-    auto& infmt = husky::io::InputFormatStore::create_line_inputformat();
-    infmt.set_input(husky::Context::get_param("hdfs_input"));
-    int vertexNum, edgeNum, srcVertex;
-    husky::lib::Aggregator<int> vertexNumAgg(0, [](int& a, const int& b) { a = b; });
-    husky::lib::Aggregator<int> edgeNumAgg(0, [](int& a, const int& b) { a += b; });
-    husky::lib::Aggregator<int> srcVertexAgg(0, [](int& a, const int& b) { a = b; });
-    auto& vertexList = husky::ObjListStore::create_objlist<Vertex>();
-    auto& inputToVertexCh = husky::ChannelStore::create_push_channel<int>(infmt, vertexList);
+void mf() {
+    int id = Context::get_global_tid();
+    if (id == 0) log_msg("Start..");
+    boost::timer::cpu_timer myTimer;
+
+    // Read DIMAXCS file
+    lib::Aggregator<int> vertexNumAgg, edgeNumAgg, srcVertexAgg, dstVertexAgg;
+    int vertexNum, edgeNum, srcVertex, dstVertex;
+    auto& infmt = io::InputFormatStore::create_line_inputformat();
+    infmt.set_input(Context::get_param("hdfs_input"));
+    auto& vertexList = ObjListStore::create_objlist<Vertex>();
+    auto& chIn2V = ChannelStore::create_push_channel<pair<int,int>>(infmt, vertexList);
     auto parseDIMACS = [&](boost::string_ref& chunk) {
         if (chunk.size() == 0) return;
         boost::char_separator<char> sep(" \t");
         boost::tokenizer<boost::char_separator<char>> tok(chunk, sep);
         boost::tokenizer<boost::char_separator<char>>::iterator it = tok.begin();
         char flag = it->at(0);
-        //husky::base::log_msg(std::string(1, flag));
         ++it;
         if(flag == 'c' || flag == '\n'){
             return;
         }else if(flag == 'p'){
-            //assert(*it=="max");
             ++it;
             int n = stoi(*it++), m = stoi(*it++);
             vertexNumAgg.update(n);
             edgeNumAgg.update(m);
         }else if(flag == 'a'){
             int u = stoi(*it++)-1, v = stoi(*it++)-1, c = stoi(*it++);
-            inputToVertexCh.push(u,v);
-            inputToVertexCh.push(v,u);
+            chIn2V.push({u, c}, v);
+            chIn2V.push({v, c}, u);
         }else if(flag == 'n'){
-            int s = stoi(*it++)-1;
+            int v = stoi(*it++)-1;
             char st = it->at(0);
-            if (st == 's') srcVertexAgg.update(s);
-        }else std::cout << "unknown input flag: " << flag << std::endl;
+            if (st == 's') srcVertexAgg.update(v);
+            else if (st == 't') dstVertexAgg.update(v);
+            else cerr << "invalid line for input flag: " << flag << endl;
+        }else cerr << "unknown input flag: " << flag << endl;
     };
-    husky::load(infmt, parseDIMACS);
-    // receive
-    husky::list_execute(vertexList, [&](Vertex& v) {
-        auto adjs = inputToVertexCh.get(v);
-        v.adjs = adjs;
+    load(infmt, parseDIMACS);
+    
+    // Process data
+    list_execute(vertexList, [&](Vertex& v) {
+        v.caps = chIn2V.get(v);
+        for (const auto& a:v.caps) v.resCaps.insert(a);
     });
-    husky::globalize(vertexList);
-    husky::lib::AggregatorFactory::sync();
-    vertexNum   = vertexNumAgg.get_value();
-    edgeNum     = edgeNumAgg.get_value();
-    srcVertex   = srcVertexAgg.get_value();
-    if (husky::Context::get_global_tid() == 0) {
-        husky::base::log_msg("Finish loading DIMACS graph.");
-        husky::base::log_msg("\tvertex number: "+std::to_string(vertexNum)+", edge number: "+std::to_string(edgeNum)
-            +", source vertex: "+std::to_string(srcVertex)+", wall time: "+myTimer.format(4, "%w"));
+    globalize(vertexList);
+    lib::AggregatorFactory::sync();
+    vertexNum=vertexNumAgg.get_value();
+    edgeNum=edgeNumAgg.get_value();
+    srcVertex=srcVertexAgg.get_value();
+    dstVertex=dstVertexAgg.get_value();
+    if (id == 0) {
+        log_msg("Finish loading DIMACS graph.");
+        log_msg("\tvertex num: "+to_string(vertexNum)+", edge num: "+to_string(edgeNum)
+            +", src vertex: "+to_string(srcVertex)+", dst vertex: "+to_string(dstVertex)+", wall time: "+myTimer.format(4, "%w"));
     }
-    myTimer.resume();
+    myTimer.start();
 
-    // Common data
-    auto& ch =
-        husky::ChannelStore::create_push_combined_channel<int, husky::MinCombiner<int>>(vertexList, vertexList);
-    husky::lib::Aggregator<int> visited(0, [](int& a, const int& b) { a += b; });
-    visited.to_keep_aggregate();
+    // Common variables
+    auto& chV2V = ChannelStore::
+        create_push_combined_channel<pair<int, vector<int>>, KeyMinCombiner<int, vector<int>>>(vertexList, vertexList);
+    lib::Aggregator<int> visited, dstVisited;
+    //lib::Aggregator<int> maxDist(0, [](int& a, const int& b) {if(b>a) a=b;});
 
     // Init
-    husky::list_execute(vertexList, [&](Vertex& v) {
+    list_execute(vertexList, [&](Vertex& v) {
         if (v.id()==srcVertex) {
             v.dist = 0;
             visited.update(1);
-            for (auto a : v.adjs) ch.push(v.dist, a);
+            for (auto a : v.resCaps) chV2V.push({v.dist+1, {v.id()}}, a.first); // use unit-length edge in finding shortest path
         }
     });
+    lib::AggregatorFactory::sync();
 
     // Main Loop
-    int dist=0;
-    while (visited.get_value() < vertexNum) {
-        ++dist;
-        if (husky::Context::get_global_tid() == 0)
-            husky::base::log_msg("iter: "+std::to_string(dist)+", visited: "
-                +std::to_string(visited.get_value())+", wall time: "+myTimer.format(4, "%w"));
-        husky::list_execute(vertexList, [&](Vertex& v) {
-            if (v.dist==-1 && ch.has_msgs(v)) {
-                v.dist = ch.get(v)+1;
-                visited.update(1);
-                for (auto a : v.adjs) ch.push(v.dist, a);
+    int iter=0;
+    while (dstVisited.get_value() == 0) {
+        list_execute(vertexList, [&](Vertex& v) {
+            if (v.dist==-1 && chV2V.has_msgs(v)) {
+                if (v.id() == dstVertex) {
+                    auto& msg = chV2V.get(v);
+                    v.dist = msg.first;
+                    string path;
+                    for (auto u : msg.second) path += to_string(u)+" -> ";
+                    path += to_string(v.id());
+                    log_msg("dst dist: "+to_string(v.dist));
+                    log_msg("shortest path: "+path);
+                    dstVisited.update(1); // ask to stop
+                }
+                else{
+                    auto msg = chV2V.get(v);
+                    v.dist = msg.first;
+                    visited.update(1);
+                    msg.first = v.dist+1;
+                    msg.second.push_back(v.id());
+                    for (auto a : v.resCaps) chV2V.push(msg, a.first);
+                }
             }
         });
-        husky::lib::AggregatorFactory::sync();
+        lib::AggregatorFactory::sync();
+        ++iter;
+        if (id == 0) log_msg("iter: "+to_string(iter)+", visited: "+to_string(visited.get_value())
+                +", wall time: "+myTimer.format(4, "%w"));
     }
 
     // Summary
-    if (husky::Context::get_global_tid() == 0)
-        husky::base::log_msg("dist: "+std::to_string(dist)+", wall time: "+myTimer.format(4, "%w"));
-    std::string small_graph = husky::Context::get_param("print");
+    if (id == 0)
+        log_msg("dist: "+to_string(iter)+", wall time: "+myTimer.format(4, "%w"));
+    string small_graph = Context::get_param("print");
     if (small_graph == "1") {
-        husky::list_execute(vertexList, [](Vertex& v) {
-            husky::base::log_msg("vertex: "+std::to_string(v.id()) + " dist: "+std::to_string(v.dist));
+        list_execute(vertexList, [](Vertex& v) {
+            log_msg("vertex: "+to_string(v.id()) + " dist: "+to_string(v.dist));
         });
     }
 }
@@ -133,14 +157,14 @@ void mf() {
 int main(int argc, char** argv)
 {
     boost::timer::cpu_timer myTimer;
-    std::vector<std::string> args;
+    vector<string> args;
     args.push_back("hdfs_namenode");
     args.push_back("hdfs_namenode_port");
     args.push_back("hdfs_input");
     args.push_back("print");
-    if (husky::init_with_args(argc, argv, args)) {
-        husky::run_job(mf);
-        husky::base::log_msg("total wall time: "+myTimer.format(4, "%w"));
+    if (init_with_args(argc, argv, args)) {
+        run_job(mf);
+        log_msg("total wall time: "+myTimer.format(4, "%w"));
         return 0;
     }
     return 1;
