@@ -98,16 +98,16 @@ int DFS(int verbose=1){
         get_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>, Vertex>
         ("chV2V"); // msg: (dist, precessor)
     auto& chT2V = ChannelStore::
-        get_push_channel<int, Vertex>
+        get_fast_async_push_channel<int, Vertex>
         ("chT2V"); // msg: (precessor, successor)
-    lib::Aggregator<int> visited, dstVisited, srcVisited;
+    lib::Aggregator<int> visited, dstVisited;
     visited.to_reset_each_iter();
     lib::Aggregator<int> minCap(numeric_limits<int>::max(), 
         [](int& a, const int& b){ if (b<a) a=b; },
         [](int& a){ a = numeric_limits<int>::max(); });
 
     // Init DFS
-    list_execute(vertexList, [&](Vertex& v) {
+    list_execute(vertexList, {}, {&chV2V}, [&](Vertex& v) {
         if (v.id()==srcVertex) {
             v.dist = 0;
             v.pre = -1;
@@ -122,7 +122,7 @@ int DFS(int verbose=1){
     // DFS
     int iter=0;
     while (dstVisited.get_value() == 0) {
-        list_execute(vertexList, [&](Vertex& v) {
+        list_execute(vertexList, {&chV2V}, {&chV2V}, [&](Vertex& v) {
             if (v.dist!=-1 || !chV2V.has_msgs(v)) return;
             auto& msg = chV2V.get(v);
             v.dist = msg.first;
@@ -130,7 +130,7 @@ int DFS(int verbose=1){
             visited.update(1);
             if (v.id() == dstVertex) {
                 dstVisited.update(1); // ask to stop
-                chT2V.push(v.id(), v.pre);
+                //chT2V.push(v.id(), v.pre);
                 if (verbose>=1) cout << "shortest path (" << v.dist << "): " << v.id();
             }
             else{
@@ -143,30 +143,39 @@ int DFS(int verbose=1){
                 +", wall time: "+myTimer.format(4, "%w"));
         if (visited.get_value()==0) return 0;
     }
+    // init backtracking
+    list_execute(vertexList, {}, {&chT2V}, [&](Vertex& v) {
+        if (v.id() == dstVertex) {
+            chT2V.push(v.id(), v.pre);
+        }
+    });
+
     
     // Update graph
     unordered_map<int, int> locEdges; // id -> suc i.e. for
+    // notify vertices on the path
+    list_execute_fast_async(vertexList, &chT2V, [&](Vertex& v, int suc) {
+        auto it = v.resCaps.find(suc);
+        assert(it != v.resCaps.end());
+        //log_msg("for v"+to_string(v.id())+", suc="+to_string(suc)+", cap="+to_string(it->second));
+        locEdges.emplace(v.id(), suc);
+        if (v.id() == srcVertex) chT2V.broadcast_stop_msg();
+        else chT2V.push(v.id(), v.pre);
+        if (verbose>=1) cout << "<-" << v.id();
+    });
+    // ChannelStore::drop_channel("chT2V"); // very important (not robust)
     // get the flow value
-    while (srcVisited.get_value() == 0) {
-        list_execute(vertexList, [&](Vertex& v) {
-            auto msg = chT2V.get(v);
-            if (msg.size()== 0) return;
-            assert(msg.size()==1);
-            int suc = msg[0];
-            auto it = v.resCaps.find(suc);
-            assert(it != v.resCaps.end());
-            minCap.update(it->second);
-            //log_msg("for v"+to_string(v.id())+", suc="+to_string(suc)+", cap="+to_string(it->second));
-            locEdges.emplace(v.id(), suc);
-            if (v.id() == srcVertex) srcVisited.update(1);
-            else chT2V.push(v.id(), v.pre);
-            if (verbose>=1) cout << "<-" << v.id();
-        });
-        lib::AggregatorFactory::sync();
-    }
+    list_execute(vertexList, {}, {}, [&](Vertex& v){
+        auto it = locEdges.find(v.id());
+        if (it == locEdges.end()) return;
+        auto it2 = v.resCaps.find(it->second);
+        assert(it2 != v.resCaps.end());
+        minCap.update(it2->second);
+    });
+    lib::AggregatorFactory::sync();
     if (print() && verbose>=1) log_msg("\naugmented flow: " + to_string(minCap.get_value()));
     // update edges
-    list_execute(vertexList, [&](Vertex& v) {
+    list_execute(vertexList, {}, {}, [&](Vertex& v) {
         auto it = locEdges.find(v.id());
         if (it == locEdges.end()) return;
         // pre
@@ -197,8 +206,8 @@ void EdmondsKarp() {
         create_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>>
         (vertexList, vertexList, "chV2V"); // msg: (dist, precessor)
     auto& chT2V = ChannelStore::
-        create_push_channel<int>
-        (vertexList, vertexList, "chT2V"); // msg: (precessor, successor)
+        create_fast_async_push_channel<int>
+        (vertexList, -1, "chT2V"); // msg: (precessor, successor)
 
     int flow, totFlow=0, iter=0;
     do{

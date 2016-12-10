@@ -123,6 +123,27 @@ class ChannelStoreBase {
         auto* channel = channel_map[name];
         return *dynamic_cast<AsyncPushChannel<MsgT, ObjT>*>(channel);
     }
+    
+
+    template <typename MsgT, typename ObjT>
+    static FastAsyncPushChannel<MsgT, ObjT>& create_fast_async_push_channel(ObjList<ObjT>& obj_list,
+                                                                   MsgT stopMsg,
+                                                                   const std::string& name = "") {
+        std::string channel_name = name.empty() ? channel_name_prefix + std::to_string(default_channel_id++) : name;
+        ASSERT_MSG(channel_map.find(channel_name) == channel_map.end(),
+                   "ChannelStoreBase::create_channel: Channel name already exists");
+        auto* fast_async_push_channel = new FastAsyncPushChannel<MsgT, ObjT>(&obj_list, stopMsg);
+        channel_map.insert({channel_name, fast_async_push_channel});
+        return *fast_async_push_channel;
+    }
+
+    template <typename MsgT, typename ObjT>
+    static FastAsyncPushChannel<MsgT, ObjT>& get_fast_async_push_channel(const std::string& name = "") {
+        ASSERT_MSG(channel_map.find(name) != channel_map.end(),
+                   "ChannelStoreBase::get_channel: Channel name doesn't exist");
+        auto* channel = channel_map[name];
+        return *dynamic_cast<FastAsyncPushChannel<MsgT, ObjT>*>(channel);
+    }
 
     // Create AsyncMigrateChannel
     template <typename ObjT>

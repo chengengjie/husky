@@ -72,6 +72,14 @@ class ChannelStore : public ChannelStoreBase {
         setup(ch);
         return ch;
     }
+    template <typename MsgT, typename ObjT>
+    static FastAsyncPushChannel<MsgT, ObjT>& create_fast_async_push_channel(ObjList<ObjT>& obj_list,
+                                                                   const MsgT stopMsg,
+                                                                   const std::string& name = "") {
+        auto& ch = ChannelStoreBase::create_fast_async_push_channel<MsgT>(obj_list, stopMsg, name);
+        setup(ch);
+        return ch;
+    }
 
     // Create MigrateAsyncChannel
     template <typename ObjT>

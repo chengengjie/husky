@@ -23,6 +23,7 @@
 #include "core/channel/channel_base.hpp"
 #include "core/channel/channel_manager.hpp"
 #include "core/channel/channel_store.hpp"
+#include "core/channel/async_push_channel.hpp"
 #include "core/context.hpp"
 #include "core/objlist.hpp"
 
@@ -102,32 +103,29 @@ void list_execute_async(ObjList<ObjT>& obj_list, ExecT execute, int async_time, 
 /// Channel must be AsyncPushChannel or AsyncMigrateChannel
 /// Only one channel is allowed so far
 /// TODO(Wei): Multiple channels should be allowed to bind to one object list
-template <typename ObjT, typename ExecT>
-void list_execute_fast_async(ObjList<ObjT>& obj_list, ExecT execute, FastAsyncPushChannel* channel, double timeout = 0.0) {
+template <typename ObjT, typename MsgT, typename ExecT>
+void list_execute_fast_async(ObjList<ObjT>& obj_list, FastAsyncPushChannel<MsgT, ObjT>* channel, ExecT execute) {
     auto* mailbox = channel->get_mailbox();
     while (true) {
         // 1. receive messages if any
         channel->prepare();
-        if (timeout == 0.0) {
-            while (mailbox->poll_non_block(channel->get_channel_id(), channel->get_progress())) {
+        bool recv = false;
+        while(!recv){
+            while (mailbox->poll(channel->get_channel_id(), channel->get_progress())) {
                 auto bin = mailbox->recv(channel->get_channel_id(), channel->get_progress());
-                channel->in(bin);
-            }
-        } else {
-            while (mailbox->poll_with_timeout(channel->get_channel_id(), channel->get_progress(), timeout)) {
-                auto bin = mailbox->recv(channel->get_channel_id(), channel->get_progress());
-                channel->in(bin);
+                if (bin.size() > 0) {
+                    recv=true;
+                    channel->in(bin);
+                    break;
+                }
             }
         }
 
-        if (channel->stop()) {
-            base::log_msg("stop");
-            break;
-        }
+        if (channel->stop()) break;
 
         // 2. iterate over the fast_recv_buffer_
         //for (size_t i = 0; i < obj_list.get_vector_size(); ++i) {
-        const auto& obj_msg_pairs = get_obj_msg_pairs();
+        const auto& obj_msg_pairs = channel->get_obj_msg_pairs();
         for (auto& obj_msg_pair : obj_msg_pairs){
             auto& i = obj_msg_pair.first;
             if (obj_list.get_del(i))

@@ -69,12 +69,7 @@ class AsyncPushChannel : public PushChannel<MsgT, ObjT> {
 template <typename MsgT, typename ObjT>
 class FastAsyncPushChannel : public AsyncPushChannel<MsgT, ObjT> {
    public:
-    explicit FastAsyncPushChannel(ObjList<ObjT>* objlist, const MsgT& stopMsg) : AsyncPushChannel<MsgT, ObjT>(objlist, objlist) {
-        // override the definition in PushChannel
-        recv_comm_handler_ = [&](const MsgT& msg, ObjT* recver_obj) {
-            size_t idx = this->dst_ptr_->index_of(recver_obj);
-            fast_recv_buffer_.emplace_back(idx, msg);
-        };
+    explicit FastAsyncPushChannel(ObjList<ObjT>* objlist, const MsgT& stopMsg) : AsyncPushChannel<MsgT, ObjT>(objlist) {
         stop_msg = stopMsg;
     }
 
@@ -84,55 +79,63 @@ class FastAsyncPushChannel : public AsyncPushChannel<MsgT, ObjT> {
     FastAsyncPushChannel(FastAsyncPushChannel&&) = default;
     FastAsyncPushChannel& operator=(FastAsyncPushChannel&&) = default;
 
-    void customized_setup() override {}
-    
     void broadcast_stop_msg() {
-        for (int i = 0; i < worker_info_->get_num_processes(); ++i) {
-            int recv_proc_num_worker = worker_info_->get_num_local_workers(i);
-            int recver_local_id_ = std::hash<KeyT>()(key) % recv_proc_num_worker;
-            int recver_id = worker_info_->local_to_global_id(i, recver_local_id_);
-            send_buffer_[recver_id] << 0 << stop_msg; // the key 0 is meaningless
+        for (int i = 0; i < this->worker_info_->get_num_processes(); ++i) {
+            //TODO: use accessor
+            int recv_proc_num_worker = this->worker_info_->get_num_local_workers(i);
+            //int recver_local_id_ = std::hash<typename ObjT::KeyT>()(key) % recv_proc_num_worker;
+            for (int j=0; j < recv_proc_num_worker; ++j){
+                int recver_id = this->worker_info_->local_to_global_id(i, j);
+                this->send_buffer_[recver_id] << 0 << stop_msg; // the key 0 is meaningless
+            }
         }
+        // also mark itself to stop
+        stop_ = true;
     }
+
+    void prepare() override { clear_recv_buffer_(); }
+    void in(BinStream& bin) override { process_bin(bin); }
     
     const std::vector<MsgT>& get(const ObjT& obj) = delete;
 
-    const auto& get_obj_msg_pairs = []() { return fast_recv_buffer_; } 
+    const std::vector<std::pair<size_t, MsgT> >& get_obj_msg_pairs() 
+        { return fast_recv_buffer_; } 
     
-    bool stop() {return stop;}
+    bool stop() {return stop_;}
 
    protected:
-    void clear_recv_buffer_() override {
+    void clear_recv_buffer_() {
         fast_recv_buffer_.clear();
-        stop = false;
+        stop_ = false;
     }
     void process_bin(BinStream& bin_push) {
         while (bin_push.size() != 0) {
-            typename DstObjT::KeyT key;
+            typename ObjT::KeyT key;
             bin_push >> key;
             MsgT msg;
             bin_push >> msg;
 
-            if (msg == stop_msg) stop = true;
+            if (msg == stop_msg) stop_ = true;
             else{
-                DstObjT* recver_obj = this->dst_ptr_->find(key);
+                ObjT* recver_obj = this->dst_ptr_->find(key);
                 size_t idx;
                 if (recver_obj == nullptr) {
-                    DstObjT obj(key);  // Construct obj using key only
+                    ObjT obj(key);  // Construct obj using key only
                     idx = this->dst_ptr_->add_object(std::move(obj));
                 } else {
                     idx = this->dst_ptr_->index_of(recver_obj);
                 }
-                if (idx >= recv_buffer_.size())
-                    recv_buffer_.resize(idx + 1);
-                recv_buffer_[idx].push_back(std::move(msg));
+                //if (idx >= recv_buffer_.size())
+                //    recv_buffer_.resize(idx + 1);
+                //recv_buffer_[idx].push_back(std::move(msg));
+                fast_recv_buffer_.emplace_back(idx, msg);
             }
         }
     }
 
-    std::vector<std::pair<size_t, MsgT>> fast_recv_buffer_;
+    std::vector<std::pair<size_t, MsgT> > fast_recv_buffer_;
     MsgT stop_msg;
-    bool stop = false;
+    bool stop_ = false;
 };
 
 }  // namespace husky
