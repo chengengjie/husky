@@ -98,6 +98,56 @@ void list_execute_async(ObjList<ObjT>& obj_list, ExecT execute, int async_time, 
     channel->inc_progress();
 }
 
+/// Warning: can only handle async push and async migrate
+/// Channel must be AsyncPushChannel or AsyncMigrateChannel
+/// Only one channel is allowed so far
+/// TODO(Wei): Multiple channels should be allowed to bind to one object list
+template <typename ObjT, typename ExecT>
+void list_execute_fast_async(ObjList<ObjT>& obj_list, ExecT execute, FastAsyncPushChannel* channel, double timeout = 0.0) {
+    auto* mailbox = channel->get_mailbox();
+    while (true) {
+        // 1. receive messages if any
+        channel->prepare();
+        if (timeout == 0.0) {
+            while (mailbox->poll_non_block(channel->get_channel_id(), channel->get_progress())) {
+                auto bin = mailbox->recv(channel->get_channel_id(), channel->get_progress());
+                channel->in(bin);
+            }
+        } else {
+            while (mailbox->poll_with_timeout(channel->get_channel_id(), channel->get_progress(), timeout)) {
+                auto bin = mailbox->recv(channel->get_channel_id(), channel->get_progress());
+                channel->in(bin);
+            }
+        }
+
+        if (channel->stop()) {
+            base::log_msg("stop");
+            break;
+        }
+
+        // 2. iterate over the fast_recv_buffer_
+        //for (size_t i = 0; i < obj_list.get_vector_size(); ++i) {
+        const auto& obj_msg_pairs = get_obj_msg_pairs();
+        for (auto& obj_msg_pair : obj_msg_pairs){
+            auto& i = obj_msg_pair.first;
+            if (obj_list.get_del(i))
+                continue;
+            execute(obj_list.get(i), obj_msg_pair.second);
+        }
+
+        // 3. flush
+        channel->out();
+    }
+    mailbox->send_complete(channel->get_channel_id(), channel->get_progress(), Context::get_hashring());
+    channel->prepare();
+    while (mailbox->poll(channel->get_channel_id(), channel->get_progress())) {
+        auto bin = mailbox->recv(channel->get_channel_id(), channel->get_progress());
+        channel->in(bin);
+    }
+    channel->inc_progress();
+}
+
+
 template <typename ObjT, typename ExecT>
 void list_execute(ObjList<ObjT>& obj_list, ExecT execute) {
     // TODO(all): the order of invoking prefuncs may matter.

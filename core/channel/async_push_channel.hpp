@@ -66,4 +66,73 @@ class AsyncPushChannel : public PushChannel<MsgT, ObjT> {
     }
 };
 
+template <typename MsgT, typename ObjT>
+class FastAsyncPushChannel : public AsyncPushChannel<MsgT, ObjT> {
+   public:
+    explicit FastAsyncPushChannel(ObjList<ObjT>* objlist, const MsgT& stopMsg) : AsyncPushChannel<MsgT, ObjT>(objlist, objlist) {
+        // override the definition in PushChannel
+        recv_comm_handler_ = [&](const MsgT& msg, ObjT* recver_obj) {
+            size_t idx = this->dst_ptr_->index_of(recver_obj);
+            fast_recv_buffer_.emplace_back(idx, msg);
+        };
+        stop_msg = stopMsg;
+    }
+
+    FastAsyncPushChannel(const FastAsyncPushChannel&) = delete;
+    FastAsyncPushChannel& operator=(const FastAsyncPushChannel&) = delete;
+
+    FastAsyncPushChannel(FastAsyncPushChannel&&) = default;
+    FastAsyncPushChannel& operator=(FastAsyncPushChannel&&) = default;
+
+    void customized_setup() override {}
+    
+    void broadcast_stop_msg() {
+        for (int i = 0; i < worker_info_->get_num_processes(); ++i) {
+            int recv_proc_num_worker = worker_info_->get_num_local_workers(i);
+            int recver_local_id_ = std::hash<KeyT>()(key) % recv_proc_num_worker;
+            int recver_id = worker_info_->local_to_global_id(i, recver_local_id_);
+            send_buffer_[recver_id] << 0 << stop_msg; // the key 0 is meaningless
+        }
+    }
+    
+    const std::vector<MsgT>& get(const ObjT& obj) = delete;
+
+    const auto& get_obj_msg_pairs = []() { return fast_recv_buffer_; } 
+    
+    bool stop() {return stop;}
+
+   protected:
+    void clear_recv_buffer_() override {
+        fast_recv_buffer_.clear();
+        stop = false;
+    }
+    void process_bin(BinStream& bin_push) {
+        while (bin_push.size() != 0) {
+            typename DstObjT::KeyT key;
+            bin_push >> key;
+            MsgT msg;
+            bin_push >> msg;
+
+            if (msg == stop_msg) stop = true;
+            else{
+                DstObjT* recver_obj = this->dst_ptr_->find(key);
+                size_t idx;
+                if (recver_obj == nullptr) {
+                    DstObjT obj(key);  // Construct obj using key only
+                    idx = this->dst_ptr_->add_object(std::move(obj));
+                } else {
+                    idx = this->dst_ptr_->index_of(recver_obj);
+                }
+                if (idx >= recv_buffer_.size())
+                    recv_buffer_.resize(idx + 1);
+                recv_buffer_[idx].push_back(std::move(msg));
+            }
+        }
+    }
+
+    std::vector<std::pair<size_t, MsgT>> fast_recv_buffer_;
+    MsgT stop_msg;
+    bool stop = false;
+};
+
 }  // namespace husky

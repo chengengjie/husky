@@ -31,7 +31,6 @@ public:
     vector<pair<KeyT, int>> caps;
     unordered_map<KeyT, int> resCaps; // (id, edge weight)
     int dist; // -1 stands for "not visited"
-    int pre; // precessor
 };
 
 template <typename K, typename V>
@@ -95,12 +94,12 @@ int DFS(int verbose=1){
     boost::timer::cpu_timer myTimer;
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
     auto& chV2V = ChannelStore::
-        get_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>, Vertex>
-        ("chV2V"); // msg: (dist, precessor)
+        get_push_combined_channel<pair<int, vector<int>>, KeyMinCombiner<int, vector<int>>, Vertex>
+        ("chV2V"); // msg: (dist, prefix)
     auto& chT2V = ChannelStore::
-        get_push_channel<int, Vertex>
+        get_push_channel<pair<int, int>, Vertex>
         ("chT2V"); // msg: (precessor, successor)
-    lib::Aggregator<int> visited, dstVisited, srcVisited;
+    lib::Aggregator<int> visited, dstVisited;
     visited.to_reset_each_iter();
     lib::Aggregator<int> minCap(numeric_limits<int>::max(), 
         [](int& a, const int& b){ if (b<a) a=b; },
@@ -110,7 +109,6 @@ int DFS(int verbose=1){
     list_execute(vertexList, [&](Vertex& v) {
         if (v.id()==srcVertex) {
             v.dist = 0;
-            v.pre = -1;
             visited.update(1);
             for (auto a : v.resCaps) chV2V.push({v.dist+1, {v.id()}}, a.first); // use unit-length edge in finding shortest path
         }
@@ -124,61 +122,75 @@ int DFS(int verbose=1){
     while (dstVisited.get_value() == 0) {
         list_execute(vertexList, [&](Vertex& v) {
             if (v.dist!=-1 || !chV2V.has_msgs(v)) return;
-            auto& msg = chV2V.get(v);
-            v.dist = msg.first;
-            v.pre = msg.second;
-            visited.update(1);
             if (v.id() == dstVertex) {
+                // update
+                auto& msg = chV2V.get(v);
+                v.dist = msg.first;
+                visited.update(1);
                 dstVisited.update(1); // ask to stop
-                chT2V.push(v.id(), v.pre);
-                if (verbose>=1) cout << "shortest path (" << v.dist << "): " << v.id();
+                // notify
+                auto& p = msg.second;
+                int np = p.size();
+                chT2V.push({-1, p[1]}, p[0]);
+                for (int i=1; i<np-1; ++i) chT2V.push({p[i-1],p[i+1]}, p[i]); // notify i-th vertex with its pre & suc
+                chT2V.push({p[np-2],v.id()}, p[np-1]);
+                // print
+                if (verbose>=1){
+                    string path;
+                    for (auto u : p) path += to_string(u)+"->";
+                    path += to_string(v.id());
+                    log_msg("shortest path ("+to_string(v.dist)+"): "+path);
+                }
             }
             else{
-                for (auto a : v.resCaps) chV2V.push({v.dist+1, v.id()}, a.first);
+                auto msg = chV2V.get(v);
+                v.dist = msg.first;
+                visited.update(1);
+                msg.first = v.dist+1;
+                msg.second.push_back(v.id());
+                for (auto a : v.resCaps) chV2V.push(msg, a.first);
             }
         });
         lib::AggregatorFactory::sync();
         ++iter;
-        if (print() && verbose>=2) log_msg("iter: "+to_string(iter)+", visited: "+to_string(visited.get_value())
+        if (print() && verbose>=3) log_msg("iter: "+to_string(iter)+", visited: "+to_string(visited.get_value())
                 +", wall time: "+myTimer.format(4, "%w"));
         if (visited.get_value()==0) return 0;
     }
+    if (print() && verbose>=2) log_msg(myTimer.format(4,"%w"));
     
     // Update graph
-    unordered_map<int, int> locEdges; // id -> suc i.e. for
+    unordered_map<int, pair<int, int>> locEdges; // id -> (pre, suc) i.e. (back, for)
     // get the flow value
-    while (srcVisited.get_value() == 0) {
-        list_execute(vertexList, [&](Vertex& v) {
-            auto msg = chT2V.get(v);
-            if (msg.size()== 0) return;
-            assert(msg.size()==1);
-            int suc = msg[0];
-            auto it = v.resCaps.find(suc);
-            assert(it != v.resCaps.end());
-            minCap.update(it->second);
-            //log_msg("for v"+to_string(v.id())+", suc="+to_string(suc)+", cap="+to_string(it->second));
-            locEdges.emplace(v.id(), suc);
-            if (v.id() == srcVertex) srcVisited.update(1);
-            else chT2V.push(v.id(), v.pre);
-            if (verbose>=1) cout << "<-" << v.id();
-        });
-        lib::AggregatorFactory::sync();
-    }
-    if (print() && verbose>=1) log_msg("\naugmented flow: " + to_string(minCap.get_value()));
+    list_execute(vertexList, [&](Vertex& v) {
+        auto msg = chT2V.get(v);
+        if (msg.size()== 0) return;
+        assert(msg.size()==1);
+        int suc = msg[0].second;
+        auto it = v.resCaps.find(suc);
+        assert(it != v.resCaps.end());
+        minCap.update(it->second);
+        //log_msg("for v"+to_string(v.id())+", suc="+to_string(suc)+", cap="+to_string(it->second));
+        locEdges.emplace(v.id(), msg[0]);
+    });
+    lib::AggregatorFactory::sync();
+    if (print() && verbose>=1) log_msg("augmented flow: " + to_string(minCap.get_value()));
     // update edges
     list_execute(vertexList, [&](Vertex& v) {
         auto it = locEdges.find(v.id());
         if (it == locEdges.end()) return;
+        int pre = it->second.first, suc = it->second.second;
         // pre
-        v.resCaps[v.pre] += minCap.get_value(); // [pre] may not exist
+        v.resCaps[pre] += minCap.get_value(); // [pre] may not exist
         // suc
-        auto iSuc = v.resCaps.find(it->second); // definitely exist
+        auto iSuc = v.resCaps.find(suc); // definitely exist
         iSuc->second -= minCap.get_value();
+        //log_msg(to_string(v.id())+": "+to_string(iSuc->second));
         assert(iSuc->second >= 0);
         if (iSuc->second == 0) v.resCaps.erase(iSuc);
     });
-    
     if (print() && verbose>=2) log_msg(myTimer.format(4,"%w"));
+
     return minCap.get_value();
 }
 
@@ -194,21 +206,20 @@ void EdmondsKarp() {
     }
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
     auto& chV2V = ChannelStore::
-        create_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>>
-        (vertexList, vertexList, "chV2V"); // msg: (dist, precessor)
+        create_push_combined_channel<pair<int, vector<int>>, KeyMinCombiner<int, vector<int>>>
+        (vertexList, vertexList, "chV2V"); // msg: (dist, prefix)
     auto& chT2V = ChannelStore::
-        create_push_channel<int>
+        create_push_channel<pair<int, int>>
         (vertexList, vertexList, "chT2V"); // msg: (precessor, successor)
 
     int flow, totFlow=0, iter=0;
     do{
-        flow = DFS(2);
+        flow = DFS();
         totFlow += flow;
         if (print()) {
             log_msg("DFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)+", time: "+myTimer.format(4, "%w"));
             log_msg("");
         }
-        break;
     }
     while(flow>0);
 
