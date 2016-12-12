@@ -3,12 +3,9 @@
 int BFS(int srcVertex, int dstVertex, int verbose=1){
     boost::timer::cpu_timer myTimer;
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
-    auto& chV2V = ChannelStore::
-        get_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>, Vertex>
-        ("chV2V"); // msg: (dist, precessor)
-    auto& chT2V = ChannelStore::
-        create_fast_async_push_channel<int>
-        (vertexList, -1, "chT2V"); // msg: (precessor, successor)
+    //auto& chV2V = ChannelStore::
+    //    get_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>, Vertex>
+    //    ("chV2V"); // msg: (dist, precessor)
     lib::Aggregator<int> visited, dstVisited;
     visited.to_reset_each_iter();
     lib::Aggregator<int> minCap(numeric_limits<int>::max(), 
@@ -16,6 +13,10 @@ int BFS(int srcVertex, int dstVertex, int verbose=1){
         [](int& a){ a = numeric_limits<int>::max(); });
 
     // Init DFS
+    auto& chV2V = ChannelStore::
+        create_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>>
+        (vertexList, vertexList, "chV2V"); // msg: (dist, precessor)
+    log_msg("cid: "+to_string(chV2V.get_channel_id()));
     list_execute(vertexList, {}, {&chV2V}, [&](Vertex& v) {
         if (v.id()==srcVertex) {
             v.dist = 0;
@@ -36,6 +37,7 @@ int BFS(int srcVertex, int dstVertex, int verbose=1){
             auto& msg = chV2V.get(v);
             v.dist = msg.first;
             v.pre = msg.second;
+            //log_msg(to_string(v.id())+" receive from "+to_string(v.pre));
             if (v.id() == 47 || v.id() == 52 || v.pre == 47 || v.pre == 52)
                 log_msg("During DFS, the pre of "+to_string(v.id())+" is updated to "+to_string(v.pre)+" my dist is "+to_string((v.dist)));
             visited.update(1);
@@ -45,7 +47,10 @@ int BFS(int srcVertex, int dstVertex, int verbose=1){
                 if (verbose>=1) cout << "shortest path (" << v.dist << "): " << v.id();
             }
             else{
-                for (auto a : v.resCaps) chV2V.push({v.dist+1, v.id()}, a.first);
+                for (auto a : v.resCaps) {
+                    chV2V.push({v.dist+1, v.id()}, a.first);
+                    //log_msg(to_string(v.id())+" push to "+to_string(a.first));
+                }
             }
         });
         lib::AggregatorFactory::sync();
@@ -54,7 +59,12 @@ int BFS(int srcVertex, int dstVertex, int verbose=1){
                 +", wall time: "+myTimer.format(4, "%w"));
         if (visited.get_value()==0) return 0;
     }
+    ChannelStore::drop_channel("chV2V");
     // init backtracking
+    auto& chT2V = ChannelStore::
+        create_fast_async_push_channel<int>
+        (vertexList, -1, "chT2V"); // msg: (precessor, successor)
+    log_msg("T2V cid: "+to_string(chT2V.get_channel_id()));
     list_execute(vertexList, {}, {&chT2V}, [&](Vertex& v) {
         if (v.id() == dstVertex) {
             chT2V.push(v.id(), v.pre);
@@ -113,9 +123,6 @@ void EdmondsKarpPredecessor() {
     LoadDIMAXCSGraph(srcVertex, dstVertex);
     if (print()) log_msg("\ttime: "+myTimer.format(4, "%w"));
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
-    auto& chV2V = ChannelStore::
-        create_push_combined_channel<pair<int, int>, KeyMinCombiner<int, int>>
-        (vertexList, vertexList, "chV2V"); // msg: (dist, precessor)
 
     int flow, totFlow=0, iter=0;
     do{
