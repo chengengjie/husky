@@ -38,7 +38,7 @@ main()
   myTimer.start();
   long flow = edmonds_karp_max_flow(g, s, t);
   cout << "s " << flow << endl;
-  cout << "Time for loading the graph is: " << endl;
+  cout << "Time for computing max flow is: " << endl;
   myTimer.report();
 
   return EXIT_SUCCESS;
