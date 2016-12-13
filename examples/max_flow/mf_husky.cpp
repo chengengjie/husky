@@ -11,17 +11,17 @@ int main(int argc, char** argv)
     args.push_back("hdfs_namenode_port");
     args.push_back("hdfs_input");
     args.push_back("print");
-    args.push_back("type");
+    //args.push_back("type");
     if (init_with_args(argc, argv, args)) {
-        string type = Context::get_param("type");
-        if (type == "predecessor"){
+        //string type = Context::get_param("type");
+        //if (type == "prefix"){
+        //    log_msg("Go to Edmonds Karp - prefix");
+        //    run_job(EdmondsKarpPrefix);
+        //}
+        //else (type == "predecessor"){
             log_msg("Go to Edmonds Karp - predecessor");
             run_job(EdmondsKarpPredecessor);
-        }
-        else if (type == "prefix"){
-            log_msg("Go to Edmonds Karp - prefix");
-            run_job(EdmondsKarpPrefix);
-        }
+        //}
         log_msg("total wall time: "+myTimer.format(4, "%w"));
         return 0;
     }
