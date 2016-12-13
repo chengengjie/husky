@@ -1,4 +1,4 @@
-#include "max_flow_base.hpp"
+#include "mf_base.hpp"
 
 void EdmondsKarpPredecessor();
 void EdmondsKarpPrefix();

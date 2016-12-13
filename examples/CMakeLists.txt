@@ -58,14 +58,14 @@ target_link_libraries(PI ${husky})
 target_link_libraries(PI ${EXTERNAL_LIB})
 set_property(TARGET PI PROPERTY CXX_STANDARD 14)
 
-# EK_BOOST
-add_executable(EK_BOOST max_flow/edmonds_karp_boost.cpp)
-target_link_libraries(EK_BOOST ${husky})
-target_link_libraries(EK_BOOST ${EXTERNAL_LIB})
-set_property(TARGET EK_BOOST PROPERTY CXX_STANDARD 14)
+# MF_BOOST
+add_executable(MF_BOOST max_flow/mf_boost.cpp)
+target_link_libraries(MF_BOOST ${husky})
+target_link_libraries(MF_BOOST ${EXTERNAL_LIB})
+set_property(TARGET MF_BOOST PROPERTY CXX_STANDARD 14)
 
 # EK_HUSKY
-add_executable(EK_HUSKY max_flow/husky.cpp max_flow/edmonds_karp_husky_prefix.cpp max_flow/edmonds_karp_husky_predecessor.cpp max_flow/max_flow_base.cpp)
+add_executable(EK_HUSKY max_flow/mf_husky.cpp max_flow/edmonds_karp_prefix.cpp max_flow/edmonds_karp_predecessor.cpp)
 target_link_libraries(EK_HUSKY ${husky})
 target_link_libraries(EK_HUSKY ${EXTERNAL_LIB})
 set_property(TARGET EK_HUSKY PROPERTY CXX_STANDARD 14)

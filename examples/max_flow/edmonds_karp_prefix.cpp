@@ -1,6 +1,8 @@
-#include "max_flow_base.hpp"
+#include "mf_base.hpp"
 
-int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
+using Vertex = VertexEK;
+
+int BFS_pref(const GraphStat& stat, int verbose=1){
     boost::timer::cpu_timer myTimer;
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
     auto& chV2V = ChannelStore::
@@ -17,7 +19,7 @@ int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
 
     // Init DFS
     list_execute(vertexList, [&](Vertex& v) {
-        if (v.id()==srcVertex) {
+        if (v.id()==stat.srcV) {
             v.dist = 0;
             visited.update(1);
             for (auto a : v.resCaps) chV2V.push({v.dist+1, {v.id()}}, a.first); // use unit-length edge in finding shortest path
@@ -26,17 +28,17 @@ int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
     });
     lib::AggregatorFactory::sync();
 
-    if (print() && verbose>=2) log_msg(myTimer.format(4,"%w"));
+    if (print() && verbose>=2) log_msg("Init time: "+myTimer.format(4,"%w"));
     // DFS
     int iter=0;
     while (dstVisited.get_value() == 0) {
         list_execute(vertexList, [&](Vertex& v) {
             if (v.dist!=-1 || !chV2V.has_msgs(v)) return;
-            if (v.id() == dstVertex) {
+            visited.update(1);
+            if (v.id() == stat.dstV) {
                 // update
                 auto& msg = chV2V.get(v);
                 v.dist = msg.first;
-                visited.update(1);
                 dstVisited.update(1); // ask to stop
                 // notify
                 auto& p = msg.second;
@@ -55,12 +57,9 @@ int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
             else{
                 auto msg = chV2V.get(v);
                 v.dist = msg.first;
-                visited.update(1);
                 msg.first = v.dist+1;
                 int pre = msg.second.back();
                 msg.second.push_back(v.id());
-                if (v.id() == 47 || v.id() == 52 || pre == 47 || pre == 52)
-                    log_msg("During BFS, the pre of "+to_string(v.id())+" is updated to "+to_string(pre)+" my dist is "+to_string((v.dist)));
                 for (auto a : v.resCaps) chV2V.push(msg, a.first);
             }
         });
@@ -70,7 +69,7 @@ int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
                 +", wall time: "+myTimer.format(4, "%w"));
         if (visited.get_value()==0) return 0;
     }
-    if (print() && verbose>=2) log_msg(myTimer.format(4,"%w"));
+    if (print() && verbose>=2) log_msg("BFS time: "+myTimer.format(4,"%w"));
     
     // Update graph
     unordered_map<int, pair<int, int>> locEdges; // id -> (pre, suc) i.e. (back, for)
@@ -102,7 +101,7 @@ int BFS_pref(int srcVertex, int dstVertex, int verbose=1){
         assert(iSuc->second >= 0);
         if (iSuc->second == 0) v.resCaps.erase(iSuc);
     });
-    if (print() && verbose>=2) log_msg(myTimer.format(4,"%w"));
+    if (print() && verbose>=2) log_msg("Update time: "+myTimer.format(4,"%w"));
 
     return minCap.get_value();
 }
@@ -111,10 +110,13 @@ void EdmondsKarpPrefix() {
     boost::timer::cpu_timer myTimer;
     if (print()) log_msg("Start..");
 
-    int srcVertex, dstVertex;
-    LoadDIMAXCSGraph(srcVertex, dstVertex);
+    GraphStat stat;
+    LoadDIMAXCSGraph<Vertex>(stat);
     if (print()) log_msg("\ttime: "+myTimer.format(4, "%w"));
     auto& vertexList = ObjListStore::get_objlist<Vertex>("vertexList");
+    list_execute(vertexList, [&](Vertex& v) {
+        for (const auto& a:v.caps) v.resCaps.insert(a);
+    });
     auto& chV2V = ChannelStore::
         create_push_combined_channel<pair<int, vector<int>>, KeyMinCombiner<int, vector<int>>>
         (vertexList, vertexList, "chV2V"); // msg: (dist, prefix)
@@ -124,12 +126,11 @@ void EdmondsKarpPrefix() {
 
     int flow, totFlow=0, iter=0;
     do{
-        flow = BFS_pref(srcVertex, dstVertex, 3);
+        flow = BFS_pref(stat);
         totFlow += flow;
-        if (print()) {
-            log_msg("DFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)+", time: "+myTimer.format(4, "%w"));
-            log_msg("");
-        }
+        if (print())
+            log_msg("DFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)
+                +", time: "+myTimer.format(4, "%w")+"\n");
     }
     while(flow>0);
 }
