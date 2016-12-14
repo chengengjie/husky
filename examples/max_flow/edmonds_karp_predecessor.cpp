@@ -123,7 +123,7 @@ void EdmondsKarpPredecessor() {
 
     int flow, totFlow=0, iter=0;
     do{
-        flow = BFS(stat, 3);
+        flow = BFS(stat);
         totFlow += flow;
         if (print()) {
             log_msg("BFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)+", time: "+myTimer.format(4, "%w"));

@@ -282,7 +282,9 @@ void MailboxEventLoop::_recv_comm_handler(int thread_id, int channel_id, int pro
 
     auto& mailbox = *(registered_mailbox_[thread_id]);
 
+    std::unique_lock<std::mutex> cv_lock(mailbox.notify_lock);
     mailbox.in_queue_.get(channel_id, progress).push(std::move(recv_bin_stream_ptr));
+    cv_lock.unlock();
     mailbox.poll_cv_.notify_one();
 }
 
