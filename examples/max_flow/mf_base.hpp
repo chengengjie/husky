@@ -46,12 +46,28 @@ public:
     int pre;
 };
 
+class FlowMsgT {
+public:
+    FlowMsgT(int value, int height) : v(value), h(height) {}
+    FlowMsgT() {}
+    int v, h; // flow value, height
+};
+
+class FlowT {
+public:
+    FlowT(int cap, const FlowMsgT& fmsg) : c(cap), fm(fmsg) {}
+    FlowT(int cap, int value, int height) : c(cap), fm(value, height) {}
+    int c;
+    FlowMsgT fm;
+};
+
 class VertexPR : public VertexBase {
 public:
     VertexPR(const KeyT& i) : VertexBase(i) {}
     int height;
     int excess; // excess flow
-    unordered_map<KeyT, pair<int, int>> preflows; // (key, flow, height), flow > 0 means outgoing
+    // for dense graph, unordered_map is better
+    unordered_map<KeyT, FlowT> preflows; // (neight id, flow), flow.v > 0 means outgoing
 };
 
 template <typename K, typename V>
@@ -92,7 +108,7 @@ void LoadDIMAXCSGraph(GraphStat& stat){
             edgeNumAgg.update(m);
         }else if(flag == 'a'){
             int u = stoi(*it++)-1, v = stoi(*it++)-1, c = stoi(*it++);
-            chIn2V.push({u, c}, v);
+            //chIn2V.push({u, c}, v);
             chIn2V.push({v, c}, u);
         }else if(flag == 'n'){
             int v = stoi(*it++)-1;

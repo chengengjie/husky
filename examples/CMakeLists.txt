@@ -64,11 +64,12 @@ target_link_libraries(MF_BOOST ${husky})
 target_link_libraries(MF_BOOST ${EXTERNAL_LIB})
 set_property(TARGET MF_BOOST PROPERTY CXX_STANDARD 14)
 
-# EK_HUSKY
-add_executable(EK_HUSKY max_flow/mf_husky.cpp max_flow/edmonds_karp_prefix.cpp max_flow/edmonds_karp_predecessor.cpp)
-target_link_libraries(EK_HUSKY ${husky})
-target_link_libraries(EK_HUSKY ${EXTERNAL_LIB})
-set_property(TARGET EK_HUSKY PROPERTY CXX_STANDARD 14)
+# MF_HUSKY
+add_executable(MF_HUSKY max_flow/mf_husky.cpp max_flow/edmonds_karp_prefix.cpp max_flow/edmonds_karp_predecessor.cpp
+max_flow/push_relabel.cpp)
+target_link_libraries(MF_HUSKY ${husky})
+target_link_libraries(MF_HUSKY ${EXTERNAL_LIB})
+set_property(TARGET MF_HUSKY PROPERTY CXX_STANDARD 14)
 
 # CC
 add_executable(CC connected_components.cpp)
