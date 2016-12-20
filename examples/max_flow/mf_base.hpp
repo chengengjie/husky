@@ -109,6 +109,7 @@ void LoadDIMAXCSGraph(GraphStat& stat){
         }else if(flag == 'a'){
             int u = stoi(*it++)-1, v = stoi(*it++)-1, c = stoi(*it++);
             //chIn2V.push({u, c}, v);
+            chIn2V.push({u, -1}, v);
             chIn2V.push({v, c}, u);
         }else if(flag == 'n'){
             int v = stoi(*it++)-1;
@@ -122,7 +123,10 @@ void LoadDIMAXCSGraph(GraphStat& stat){
     
     // Process data
     list_execute(vertexList, [&](VertexT& v) {
-        v.caps = chIn2V.get(v);
+        auto& msgs = chIn2V.get(v);
+        for (auto& m : msgs) {
+            if (m.second != -1) v.caps.push_back(m);
+        }
     });
     //globalize(vertexList);
     lib::AggregatorFactory::sync();

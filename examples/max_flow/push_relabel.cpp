@@ -15,7 +15,9 @@ void PushRelabel() {
     auto& chHeight = ChannelStore::create_push_channel<pair<int, int>>
         (vertexList, vertexList, "chHeight"); // (id, height) 
 
-    lib::Aggregator<int> updated; 
+    lib::Aggregator<int> updated, srcExcess, dstExcess, totExcess; 
+    srcExcess.to_reset_each_iter();
+    dstExcess.to_reset_each_iter();
     updated.to_reset_each_iter();
     
     // Init preflow
@@ -27,6 +29,7 @@ void PushRelabel() {
             for (auto& c : v.caps) {
                 v.preflows.emplace(c.first, FlowT(c.second, c.second, 0));
                 chFlow.push({v.id(), FlowMsgT(c.second, stat.vNum)}, c.first);
+                totExcess.update(c.second);
             }
             updated.update(1);
         }
@@ -37,16 +40,21 @@ void PushRelabel() {
         }
     });
     lib::AggregatorFactory::sync();
+    if (print()) log_msg("Tot excess is "+to_string(totExcess.get_value()));
 
     // Main loop
-    int iter=0;
+    int iter=0, preSrcEx=0, preDstEx=0;
     while (updated.get_value() > 0) {
         list_execute(vertexList, {&chFlow, &chHeight}, {&chFlow, &chHeight}, [&](Vertex& v){
             // recv push values
             auto& inflows = chFlow.get(v);
             for (auto& f : inflows) v.excess += f.second.v; // to push out
-            if (v.id() == stat.dstV || v.id() == stat.srcV) {
-                log_msg("v"+to_string(v.id()+1)+": excess="+to_string(v.excess)+" height="+to_string(v.height));
+            if (v.id() == stat.srcV) {
+                srcExcess.update(v.excess);
+                return;
+            }
+            else if (v.id() ==  stat.dstV) {
+                dstExcess.update(v.excess);
                 return;
             }
             for (auto& f : inflows) {
@@ -105,7 +113,19 @@ void PushRelabel() {
             }
         });
         lib::AggregatorFactory::sync();
-        if (print()) log_msg("iter"+to_string(iter++)+": #updated="+to_string(updated.get_value())+"\n");
+        if (print()) {
+            ++iter;
+            int srcEx = srcExcess.get_value();
+            int dstEx = dstExcess.get_value();
+            if (iter == 1 || srcEx!=preSrcEx || dstEx!=preDstEx) {
+                log_msg("iter"+to_string(iter)+": #updated="+to_string(updated.get_value())
+                +", srcEx="+to_string(srcEx)+", dstEx="+to_string(dstEx)
+                +", remainEx="+to_string(totExcess.get_value()-srcEx-dstEx)
+                +", time="+myTimer.format(4, "%w"));
+                preSrcEx = srcEx;
+                preDstEx = dstEx;
+            }
+        }
     }
 
     if (print()) log_msg("\tcalc time: "+myTimer.format(4, "%w"));

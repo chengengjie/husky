@@ -17,7 +17,7 @@ int BFS_pref(const GraphStat& stat, int verbose=1){
         [](int& a, const int& b){ if (b<a) a=b; },
         [](int& a){ a = numeric_limits<int>::max(); });
 
-    // Init DFS
+    // Init BFS
     list_execute(vertexList, [&](Vertex& v) {
         if (v.id()==stat.srcV) {
             v.dist = 0;
@@ -29,7 +29,7 @@ int BFS_pref(const GraphStat& stat, int verbose=1){
     lib::AggregatorFactory::sync();
 
     if (print() && verbose>=2) log_msg("Init time: "+myTimer.format(4,"%w"));
-    // DFS
+    // BFS
     int iter=0;
     while (dstVisited.get_value() == 0) {
         list_execute(vertexList, [&](Vertex& v) {
@@ -43,9 +43,15 @@ int BFS_pref(const GraphStat& stat, int verbose=1){
                 // notify
                 auto& p = msg.second;
                 int np = p.size();
-                chT2V.push({-1, p[1]}, p[0]);
-                for (int i=1; i<np-1; ++i) chT2V.push({p[i-1],p[i+1]}, p[i]); // notify i-th vertex with its pre & suc
-                chT2V.push({p[np-2],v.id()}, p[np-1]);
+                if (np > 1) {
+                    chT2V.push({-1, p[1]}, p[0]);
+                    for (int i=1; i<np-1; ++i) chT2V.push({p[i-1],p[i+1]}, p[i]); // notify i-th vertex with its pre & suc
+                    chT2V.push({p[np-2],v.id()}, p[np-1]);
+                }
+                else {
+                    assert(np==1);
+                    chT2V.push({-1, v.id()}, p[0]);
+                }
                 // print
                 if (verbose>=1){
                     string path;
@@ -129,7 +135,7 @@ void EdmondsKarpPrefix() {
         flow = BFS_pref(stat);
         totFlow += flow;
         if (print())
-            log_msg("DFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)
+            log_msg("BFS iter: "+to_string(++iter)+", tot flow: "+to_string(totFlow)
                 +", time: "+myTimer.format(4, "%w")+"\n");
     }
     while(flow>0);
